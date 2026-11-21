@@ -47,24 +47,77 @@ public class Journal extends Activity {
     GradientDrawable bg(int color,int radius){GradientDrawable g=new GradientDrawable();g.setColor(color);g.setCornerRadius(dp(radius));return g;}
     TextView line(LinearLayout box,String value,int size){TextView t=new TextView(this);t.setText(value);t.setTextSize(size);t.setTextColor(INK);box.addView(t);return t;}
     void heading(LinearLayout box,String name){TextView t=line(box,name,30);t.setTypeface(Typeface.SERIF,Typeface.BOLD);t.setPadding(0,dp(12),0,dp(8));}
-    void button(LinearLayout box,String name,Runnable action){Button b=new Button(this);b.setAllCaps(false);b.setText(name);b.setTextColor(GREEN);b.setOnClickListener(v->action.run());if(box.getOrientation()==0)box.addView(b,new LinearLayout.LayoutParams(0,-2,1));else box.addView(b);}
+    void button(LinearLayout box,String name,Runnable action){Button b=new Button(this);
+        b.setTextSize(14);b.setMinHeight(dp(48));b.setElevation(0);b.setStateListAnimator(null);
+        b.setBackground(new android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(0x24285443),bg(0xffeaf0e9,14),null));
+        b.setPadding(dp(8),dp(6),dp(8),dp(6));b.setAllCaps(false);b.setText(name);b.setTextColor(GREEN);b.setOnClickListener(v->action.run());boolean horizontal=box.getOrientation()==0;
+        LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(horizontal?0:-1,-2,horizontal?1:0);
+        lp.setMargins(0,dp(5),horizontal?dp(4):0,dp(5));box.addView(b,lp);}
     LinearLayout row(LinearLayout parent){LinearLayout r=new LinearLayout(this);parent.addView(r);return r;}
     LinearLayout card(int color){LinearLayout c=column();pad(c,16);c.setBackground(bg(color,16));LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);lp.bottomMargin=dp(12);page.addView(c,lp);return c;}
     int total(String kind){try(Cursor c=db.rawQuery("SELECT coalesce(sum(amount),0) FROM entry WHERE day=? AND kind=?",new String[]{day.toString(),kind})){c.moveToFirst();return c.getInt(0);}}
     void render(){
         LinearLayout root=column();root.setBackgroundColor(PAPER);ScrollView scroll=new ScrollView(this);page=column();pad(page,20);scroll.addView(page);root.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
-        line(page,"ТОПКА   /   ЛИЧНЫЙ ДНЕВНИК",12);heading(page,tab==0?"Мой день":tab==1?"Вода":"История");
-        button(page,day.format(DateTimeFormatter.ofPattern("EEEE, d MMMM",ru)),()->new DatePickerDialog(this,(v,y,m,d)->{day=LocalDate.of(y,m+1,d);render();},day.getYear(),day.getMonthValue()-1,day.getDayOfMonth()).show());
-        if(tab!=2)water();
-        if(tab==0){
-            heading(page,"Питание");line(page,"За день   "+total("meal")+" ккал",18);
-            LinearLayout actions=row(page);button(actions,"Добавить блюдо",()->meal("",null,day));button(actions,"Камера",this::camera);
-            for(int i=0;i<DISH.length;i++){final int n=i;LinearLayout c=card(WHITE);photo(c,PHOTOS[i]);button(c,DISH[i],()->meal(DISH[n],PHOTOS[n],day));}
+        String[] titles={"Мой день","Вода","История","Питание"};
+        heading(page,titles[tab]);
+        TextView date=line(page,day.format(DateTimeFormatter.ofPattern("EEEE, d MMMM",ru))+"   ▾",16);
+        date.setTextColor(GREEN);date.setGravity(Gravity.CENTER_VERTICAL);date.setMinHeight(dp(48));
+        date.setOnClickListener(v->new DatePickerDialog(this,(picker,y,m,d)->{day=LocalDate.of(y,m+1,d);render();},day.getYear(),day.getMonthValue()-1,day.getDayOfMonth()).show());
+        switch(tab){
+            case 0: overview();break;
+            case 1: water();heading(page,"Записи воды");entries();break;
+            case 2: entries();break;
+            case 3: food();break;
         }
-        if(tab!=0)entries();
-        LinearLayout nav=row(root);String[] labels={"Мой день","Вода","История"};
-        for(int i=0;i<3;i++){final int n=i;button(nav,labels[i],()->{tab=n;render();});nav.getChildAt(i).setEnabled(i!=tab);}
+        LinearLayout nav=row(root);nav.setGravity(Gravity.CENTER);nav.setBackgroundColor(WHITE);pad(nav,6);
+        addTab(nav,0,"День");addTab(nav,3,"Еда");addTab(nav,1,"Вода");addTab(nav,2,"История");
+        getWindow().setNavigationBarColor(WHITE);
+        getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR|View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR);
         setContentView(root);
+    }
+    void openTab(int index){tab=index;render();}
+    void addTab(LinearLayout nav,int index,String label){
+        boolean selected=tab==index;
+        LinearLayout item=column();item.setGravity(Gravity.CENTER);pad(item,5);
+        if(selected)item.setBackground(bg(0xffe5eee6,18));
+        View symbol=new TabIcon(index);item.addView(symbol,new LinearLayout.LayoutParams(dp(24),dp(24)));
+        TextView caption=line(item,label,12);caption.setTypeface(Typeface.DEFAULT,selected?Typeface.BOLD:Typeface.NORMAL);
+        item.setSelected(selected);item.setFocusable(true);item.setContentDescription(label);
+        item.setOnClickListener(v->openTab(index));
+        nav.addView(item,new LinearLayout.LayoutParams(0,dp(60),1));
+    }
+    class TabIcon extends View {
+        final int index;final Paint pen=new Paint(Paint.ANTI_ALIAS_FLAG);
+        TabIcon(int index){super(Journal.this);this.index=index;pen.setColor(GREEN);pen.setStyle(Paint.Style.STROKE);pen.setStrokeWidth(1.6f);pen.setStrokeCap(Paint.Cap.ROUND);pen.setStrokeJoin(Paint.Join.ROUND);}
+        @Override protected void onDraw(Canvas c){
+            c.save();c.scale(getWidth()/24f,getHeight()/24f);Path p=new Path();
+            if(index==0){p.moveTo(3,11);p.lineTo(12,4);p.lineTo(21,11);p.moveTo(5,10);p.lineTo(5,20);p.lineTo(19,20);p.lineTo(19,10);}
+            else if(index==1){p.moveTo(12,2);p.cubicTo(10,6,5,11,5,15);p.cubicTo(5,24,19,24,19,15);p.cubicTo(19,11,14,6,12,2);}
+            else if(index==3){c.drawArc(2,4,22,20,0,180,false,pen);c.drawLine(2,12,22,12,pen);c.drawLine(9,20,15,20,pen);c.drawLine(10,8,12,4,pen);c.drawLine(15,8,17,4,pen);}
+            else{c.drawCircle(12,12,8.5f,pen);p.moveTo(12,7);p.lineTo(12,12);p.lineTo(16,14);}
+            c.drawPath(p,pen);c.restore();
+        }
+    }
+    void overview(){
+        LinearLayout hero=card(GREEN);
+        TextView label=line(hero,"Питание за день",16);label.setTextColor(WHITE);
+        TextView value=line(hero,total("meal")+" ккал",38);value.setTextColor(WHITE);value.setTypeface(Typeface.SERIF,Typeface.BOLD);
+        photo(hero,PHOTOS[0]);hero.setContentDescription("Открыть питание, "+value.getText());hero.setOnClickListener(v->openTab(3));
+        LinearLayout hydration=card(0xffdeedf0);line(hydration,"Вода",17);
+        line(hydration,total("water")+" из "+getPreferences(0).getInt("goal",2000)+" мл",24);
+        button(hydration,"Открыть счётчик",()->openTab(1));
+    }
+    void food(){
+        LinearLayout actions=row(page);button(actions,"Записать блюдо",()->meal("",null,day));button(actions,"Снять фото",this::camera);
+        heading(page,"Быстрый выбор");
+        HorizontalScrollView gallery=new HorizontalScrollView(this);gallery.setHorizontalScrollBarEnabled(false);page.addView(gallery);
+        LinearLayout strip=new LinearLayout(this);gallery.addView(strip);
+        for(int i=0;i<DISH.length;i++){
+            final int index=i;LinearLayout tile=column();tile.setBackground(bg(WHITE,16));pad(tile,8);
+            LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(dp(180),-2);lp.rightMargin=dp(10);strip.addView(tile,lp);
+            photo(tile,PHOTOS[i]);button(tile,DISH[i],()->meal(DISH[index],PHOTOS[index],day));
+        }
+        heading(page,"Приёмы пищи");entries();
     }
     void water(){
         int ml=total("water"),goal=getPreferences(0).getInt("goal",2000);
@@ -85,7 +138,7 @@ public class Journal extends Activity {
         AlertDialog dlg=new AlertDialog.Builder(this).setTitle("Приём пищи").setView(c).setNegativeButton("Отмена",null).setPositiveButton("Записать",null).show();
         dlg.getButton(-1).setOnClickListener(v->{String label=title.getText().toString().trim();if(label.isEmpty()){title.setError("Укажите название");return;}int n=read(kcal,0,10000);if(n>=0){insert(date,"meal",label,n,picture);dlg.dismiss();}});
     }
-    void entries(){String sql="SELECT id,title,amount,kind,photo FROM entry WHERE day=?"+(tab==1?" AND kind='water'":"")+" ORDER BY id DESC";try(Cursor cur=db.rawQuery(sql,new String[]{day.toString()})){if(!cur.moveToFirst()){line(page,"За этот день записей пока нет",16);return;}do{
+    void entries(){String sql="SELECT id,title,amount,kind,photo FROM entry WHERE day=?"+(tab==1?" AND kind='water'":tab==3?" AND kind='meal'":"")+" ORDER BY id DESC";try(Cursor cur=db.rawQuery(sql,new String[]{day.toString()})){if(!cur.moveToFirst()){line(page,"За этот день записей пока нет",16);return;}do{
         long id=cur.getLong(0);String title=cur.getString(1);LinearLayout c=card(WHITE);photo(c,cur.getString(4));line(c,title,20);line(c,cur.getInt(2)+("water".equals(cur.getString(3))?" мл":" ккал"),16);button(c,"Удалить",()->new AlertDialog.Builder(this).setMessage("Удалить запись «"+title+"»?").setNegativeButton("Отмена",null).setPositiveButton("Удалить",(d,w)->{db.delete("entry","id=?",new String[]{Long.toString(id)});render();}).show());
     }while(cur.moveToNext());}}
     void camera(){pendingDay=day.toString();try{startActivityForResult(new Intent(MediaStore.ACTION_IMAGE_CAPTURE),7);}catch(ActivityNotFoundException e){Toast.makeText(this,"Приложение камеры недоступно",Toast.LENGTH_LONG).show();}}
