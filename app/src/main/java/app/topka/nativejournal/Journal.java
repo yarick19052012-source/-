@@ -178,6 +178,12 @@ public class Journal extends androidx.activity.ComponentActivity {
         });
         renderRecipes(results,chips);
     }
+    void reveal(View target,int delay){
+        if(!android.animation.ValueAnimator.areAnimatorsEnabled())return;
+        target.setAlpha(0f);target.setTranslationY(dp(8));
+        target.animate().alpha(1f).translationY(0f).setStartDelay(delay).setDuration(200)
+            .setInterpolator(new android.view.animation.DecelerateInterpolator()).start();
+    }
     void renderRecipes(LinearLayout results,LinearLayout chips){
         results.removeAllViews();String query=recipeQuery.trim().toLowerCase(ru).replace('ё','е');
         for(int i=0;i<chips.getChildCount();i++){
@@ -191,6 +197,7 @@ public class Journal extends androidx.activity.ComponentActivity {
             LinearLayout tile=column();pad(tile,16);tile.setBackground(bg(WHITE,16));
             LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);lp.topMargin=dp(8);results.addView(tile,lp);
             line(tile,recipe.optString(0),12).setTextColor(GREEN);line(tile,recipe.optString(1),20).setTypeface(Typeface.SERIF,Typeface.BOLD);
+            if(results.getChildCount()<=5 && recipeQuery.isEmpty())reveal(tile,25*(results.getChildCount()-1));
             tile.setFocusable(true);tile.setOnClickListener(v->recipeDetails(recipe));
         }
         if(results.getChildCount()==0)line(results,"По этому запросу блюд нет",16);
@@ -204,6 +211,7 @@ public class Journal extends androidx.activity.ComponentActivity {
             try{startActivity(new Intent(Intent.ACTION_VIEW,android.net.Uri.parse(recipe.optString(4))));}
             catch(ActivityNotFoundException ex){Toast.makeText(this,"Браузер недоступен",Toast.LENGTH_SHORT).show();}
         });
+        reveal(body,0);
         new AlertDialog.Builder(this).setTitle(recipe.optString(1)).setView(scroll)
             .setNegativeButton("Закрыть",null).setPositiveButton("В дневник",(d,w)->meal(recipe.optString(1),null,day)).show();
     }
@@ -260,6 +268,7 @@ public class Journal extends androidx.activity.ComponentActivity {
         view.getPreviewStreamState().observe(this,new androidx.lifecycle.Observer<androidx.camera.view.PreviewView.StreamState>(){
             public void onChanged(androidx.camera.view.PreviewView.StreamState state){
                 boolean ready=state==androidx.camera.view.PreviewView.StreamState.STREAMING;
+                if(ready && !shutter.isEnabled())reveal(shutter,0);
                 shutter.setEnabled(ready);status.setText(ready?"Помести блюдо в центр кадра":"Ожидаем изображение…");
             }
         });
