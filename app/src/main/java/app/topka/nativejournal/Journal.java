@@ -58,7 +58,7 @@ public class Journal extends androidx.activity.ComponentActivity {
     int total(String kind){try(Cursor c=db.rawQuery("SELECT coalesce(sum(amount),0) FROM entry WHERE day=? AND kind=?",new String[]{day.toString(),kind})){c.moveToFirst();return c.getInt(0);}}
     void render(){
         LinearLayout root=column();root.setBackgroundColor(PAPER);ScrollView scroll=new ScrollView(this);page=column();pad(page,20);scroll.addView(page);root.addView(scroll,new LinearLayout.LayoutParams(-1,0,1));
-        String[] titles={"Мой день","Вода","История","Питание"};
+        String[] titles={"Мой день","Вода","История","Питание","Рецепты"};
         heading(page,titles[tab]);
         TextView date=line(page,day.format(DateTimeFormatter.ofPattern("EEEE, d MMMM",ru))+"   ▾",16);
         date.setTextColor(GREEN);date.setGravity(Gravity.CENTER_VERTICAL);date.setMinHeight(dp(48));
@@ -68,9 +68,10 @@ public class Journal extends androidx.activity.ComponentActivity {
             case 1: water();heading(page,"Записи воды");entries();break;
             case 2: entries();break;
             case 3: food();break;
+            case 4: recipes();break;
         }
         LinearLayout nav=row(root);nav.setGravity(Gravity.CENTER);nav.setBackgroundColor(WHITE);pad(nav,6);
-        addTab(nav,0,"День");addTab(nav,3,"Еда");addTab(nav,1,"Вода");addTab(nav,2,"История");
+        addTab(nav,0,"День");addTab(nav,3,"Еда");addTab(nav,4,"Рецепты");addTab(nav,1,"Вода");addTab(nav,2,"История");
         getWindow().setNavigationBarColor(WHITE);
         getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR|View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR);
         setContentView(root);
@@ -104,6 +105,7 @@ public class Journal extends androidx.activity.ComponentActivity {
             c.save();c.scale(getWidth()/24f,getHeight()/24f);Path p=new Path();
             if(index==0){p.moveTo(3,11);p.lineTo(12,4);p.lineTo(21,11);p.moveTo(5,10);p.lineTo(5,20);p.lineTo(19,20);p.lineTo(19,10);}
             else if(index==1){p.moveTo(12,2);p.cubicTo(10,6,5,11,5,15);p.cubicTo(5,24,19,24,19,15);p.cubicTo(19,11,14,6,12,2);}
+            else if(index==4){c.drawRoundRect(3,4,20,20,2,2,pen);c.drawLine(7,4,7,20,pen);c.drawLine(11,9,17,9,pen);c.drawLine(11,13,16,13,pen);}
             else if(index==3){c.drawArc(2,4,22,20,0,180,false,pen);c.drawLine(2,12,22,12,pen);c.drawLine(9,20,15,20,pen);c.drawLine(10,8,12,4,pen);c.drawLine(15,8,17,4,pen);}
             else{c.drawCircle(12,12,8.5f,pen);p.moveTo(12,7);p.lineTo(12,12);p.lineTo(16,14);}
             c.drawPath(p,pen);c.restore();
@@ -150,6 +152,60 @@ public class Journal extends androidx.activity.ComponentActivity {
         EditText kcal=input(c,"Ккал в порции",InputType.TYPE_CLASS_NUMBER);
         AlertDialog dlg=new AlertDialog.Builder(this).setTitle("Приём пищи").setView(c).setNegativeButton("Отмена",null).setPositiveButton("Записать",null).show();
         dlg.getButton(-1).setOnClickListener(v->{String label=title.getText().toString().trim();if(label.isEmpty()){title.setError("Укажите название");return;}int n=read(kcal,0,10000);if(n>=0){insert(date,"meal",label,n,picture);dlg.dismiss();}});
+    }
+    String recipeFilter="Все";
+    String recipeQuery="";
+    org.json.JSONArray cookbook;
+    void recipes(){
+        if(cookbook==null){
+            try(InputStream in=getAssets().open("recipes.json");Scanner reader=new Scanner(in,"UTF-8")){
+                cookbook=new org.json.JSONArray(reader.useDelimiter("\\A").next());
+            }catch(Exception error){line(page,"Не удалось открыть сборник рецептов",16);return;}
+        }
+        EditText search=input(page,"Найти блюдо или ингредиент",InputType.TYPE_CLASS_TEXT);
+        search.setText(recipeQuery);
+        HorizontalScrollView scroller=new HorizontalScrollView(this);scroller.setHorizontalScrollBarEnabled(false);page.addView(scroller);
+        LinearLayout chips=new LinearLayout(this);scroller.addView(chips);
+        LinearLayout results=column();page.addView(results);
+        for(String category:new String[]{"Все","Завтрак","Обед","Ужин","Перекус"}){
+            Button chip=new Button(this);chip.setAllCaps(false);chip.setText(category);chips.addView(chip);
+            chip.setOnClickListener(v->{recipeFilter=category;renderRecipes(results,chips);});
+        }
+        search.addTextChangedListener(new android.text.TextWatcher(){
+            public void beforeTextChanged(CharSequence s,int start,int count,int after){}
+            public void onTextChanged(CharSequence s,int start,int before,int count){recipeQuery=s.toString();renderRecipes(results,chips);}
+            public void afterTextChanged(android.text.Editable text){}
+        });
+        renderRecipes(results,chips);
+    }
+    void renderRecipes(LinearLayout results,LinearLayout chips){
+        results.removeAllViews();String query=recipeQuery.trim().toLowerCase(ru).replace('ё','е');
+        for(int i=0;i<chips.getChildCount();i++){
+            Button chip=(Button)chips.getChildAt(i);boolean selected=recipeFilter.contentEquals(chip.getText());
+            chip.setSelected(selected);chip.setTextColor(selected?WHITE:INK);chip.setBackgroundTintList(android.content.res.ColorStateList.valueOf(selected?GREEN:0xffe6ece4));
+        }
+        for(int i=0;i<cookbook.length();i++){
+            org.json.JSONArray recipe=cookbook.optJSONArray(i);
+            if(!recipeFilter.equals("Все")&&!recipeFilter.equals(recipe.optString(0)))continue;
+            if(!(recipe.optString(1)+" "+recipe.optString(2)).toLowerCase(ru).replace('ё','е').contains(query))continue;
+            LinearLayout tile=column();pad(tile,16);tile.setBackground(bg(WHITE,16));
+            LinearLayout.LayoutParams lp=new LinearLayout.LayoutParams(-1,-2);lp.topMargin=dp(8);results.addView(tile,lp);
+            line(tile,recipe.optString(0),12).setTextColor(GREEN);line(tile,recipe.optString(1),20).setTypeface(Typeface.SERIF,Typeface.BOLD);
+            tile.setFocusable(true);tile.setOnClickListener(v->recipeDetails(recipe));
+        }
+        if(results.getChildCount()==0)line(results,"По этому запросу блюд нет",16);
+    }
+    void recipeDetails(org.json.JSONArray recipe){
+        ScrollView scroll=new ScrollView(this);LinearLayout body=column();pad(body,20);scroll.addView(body);
+        line(body,"Ингредиенты",18).setTypeface(Typeface.DEFAULT_BOLD);line(body,recipe.optString(2),16);
+        TextView method=line(body,"Приготовление",18);method.setPadding(0,dp(16),0,dp(4));method.setTypeface(Typeface.DEFAULT_BOLD);
+        line(body,recipe.optString(3),16);
+        button(body,"Оригинал на сайте NHS ↗",()->{
+            try{startActivity(new Intent(Intent.ACTION_VIEW,android.net.Uri.parse(recipe.optString(4))));}
+            catch(ActivityNotFoundException ex){Toast.makeText(this,"Браузер недоступен",Toast.LENGTH_SHORT).show();}
+        });
+        new AlertDialog.Builder(this).setTitle(recipe.optString(1)).setView(scroll)
+            .setNegativeButton("Закрыть",null).setPositiveButton("В дневник",(d,w)->meal(recipe.optString(1),null,day)).show();
     }
     void entries(){String sql="SELECT id,title,amount,kind,photo FROM entry WHERE day=?"+(tab==1?" AND kind='water'":tab==3?" AND kind='meal'":"")+" ORDER BY id DESC";try(Cursor cur=db.rawQuery(sql,new String[]{day.toString()})){if(!cur.moveToFirst()){line(page,"За этот день записей пока нет",16);return;}do{
         long id=cur.getLong(0);String title=cur.getString(1);LinearLayout c=card(WHITE);photo(c,cur.getString(4));line(c,title,20);line(c,cur.getInt(2)+("water".equals(cur.getString(3))?" мл":" ккал"),16);button(c,"Удалить",()->new AlertDialog.Builder(this).setMessage("Удалить запись «"+title+"»?").setNegativeButton("Отмена",null).setPositiveButton("Удалить",(d,w)->{db.delete("entry","id=?",new String[]{Long.toString(id)});render();}).show());
