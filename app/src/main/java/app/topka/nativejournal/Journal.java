@@ -19,7 +19,7 @@ import java.time.*;
 import java.time.format.DateTimeFormatter;
 import java.util.*;
 
-public class Journal extends Activity {
+public class Journal extends androidx.activity.ComponentActivity {
     private static final int INK=0xff23372e, GREEN=0xff285443, PAPER=0xfff7f5ee, WHITE=0xffffffff;
     private static final String[] DISH={"Овощной салат","Пицца","Завтрак с яйцом"};
     private static final String[] PHOTOS={"salad.jpg","pizza.jpg","breakfast.jpg"};
@@ -75,13 +75,24 @@ public class Journal extends Activity {
         getWindow().getDecorView().setSystemUiVisibility(View.SYSTEM_UI_FLAG_LIGHT_STATUS_BAR|View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR);
         setContentView(root);
     }
-    void openTab(int index){tab=index;render();}
+    void openTab(int index){
+        if(tab==index)return;
+        tab=index;render();
+        if(android.animation.ValueAnimator.areAnimatorsEnabled()){
+            page.setAlpha(0f);page.setTranslationY(dp(12));
+            page.animate().alpha(1f).translationY(0).setDuration(230).setInterpolator(new android.view.animation.DecelerateInterpolator()).start();
+        }
+    }
     void addTab(LinearLayout nav,int index,String label){
         boolean selected=tab==index;
         LinearLayout item=column();item.setGravity(Gravity.CENTER);pad(item,5);
         if(selected)item.setBackground(bg(0xffe5eee6,18));
         View symbol=new TabIcon(index);item.addView(symbol,new LinearLayout.LayoutParams(dp(24),dp(24)));
         TextView caption=line(item,label,12);caption.setTypeface(Typeface.DEFAULT,selected?Typeface.BOLD:Typeface.NORMAL);
+        if(selected && android.animation.ValueAnimator.areAnimatorsEnabled()){
+            symbol.setScaleX(.82f);symbol.setScaleY(.82f);
+            symbol.animate().scaleX(1).scaleY(1).setDuration(190).setInterpolator(new android.view.animation.OvershootInterpolator()).start();
+        }
         item.setSelected(selected);item.setFocusable(true);item.setContentDescription(label);
         item.setOnClickListener(v->openTab(index));
         nav.addView(item,new LinearLayout.LayoutParams(0,dp(60),1));
@@ -100,6 +111,8 @@ public class Journal extends Activity {
     }
     void overview(){
         LinearLayout hero=card(GREEN);
+        GradientDrawable cover=new GradientDrawable(GradientDrawable.Orientation.TL_BR,new int[]{0xff183d37,0xff396d50});
+        cover.setCornerRadius(dp(24));hero.setBackground(cover);
         TextView label=line(hero,"Питание за день",16);label.setTextColor(WHITE);
         TextView value=line(hero,total("meal")+" ккал",38);value.setTextColor(WHITE);value.setTypeface(Typeface.SERIF,Typeface.BOLD);
         photo(hero,PHOTOS[0]);hero.setContentDescription("Открыть питание, "+value.getText());hero.setOnClickListener(v->openTab(3));
@@ -108,7 +121,7 @@ public class Journal extends Activity {
         button(hydration,"Открыть счётчик",()->openTab(1));
     }
     void food(){
-        LinearLayout actions=row(page);button(actions,"Записать блюдо",()->meal("",null,day));button(actions,"Снять фото",this::camera);
+        LinearLayout actions=row(page);button(actions,"Записать блюдо",()->meal("",null,day));button(actions,"ИИ-камера",this::camera);
         heading(page,"Быстрый выбор");
         HorizontalScrollView gallery=new HorizontalScrollView(this);gallery.setHorizontalScrollBarEnabled(false);page.addView(gallery);
         LinearLayout strip=new LinearLayout(this);gallery.addView(strip);
@@ -122,7 +135,7 @@ public class Journal extends Activity {
     void water(){
         int ml=total("water"),goal=getPreferences(0).getInt("goal",2000);
         LinearLayout c=card(0xffe0eee9);line(c,"Вода за день",16);TextView t=line(c,ml+" / "+goal+" мл",26);t.setTypeface(Typeface.DEFAULT_BOLD);
-        ProgressBar bar=new ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal);bar.setMax(goal);bar.setProgress(Math.min(ml,goal));c.addView(bar);
+        ProgressBar bar=new ProgressBar(this,null,android.R.attr.progressBarStyleHorizontal);bar.setMax(goal);bar.setProgressTintList(android.content.res.ColorStateList.valueOf(0xff278487));bar.setProgress(Math.min(ml,goal),android.animation.ValueAnimator.areAnimatorsEnabled());c.addView(bar);
         LinearLayout amounts=row(c);for(int volume:new int[]{150,250,500})button(amounts,"+"+volume,()->insert(day,"water","Вода",volume,null));
         if(tab==1){button(c,"Другой объём",()->number("Сколько воды, мл?",250,5000,v->insert(day,"water","Вода",v,null)));button(c,"Изменить цель",()->number("Дневная цель, мл",goal,10000,v->{getPreferences(0).edit().putInt("goal",v).apply();render();}));}
     }
@@ -141,10 +154,68 @@ public class Journal extends Activity {
     void entries(){String sql="SELECT id,title,amount,kind,photo FROM entry WHERE day=?"+(tab==1?" AND kind='water'":tab==3?" AND kind='meal'":"")+" ORDER BY id DESC";try(Cursor cur=db.rawQuery(sql,new String[]{day.toString()})){if(!cur.moveToFirst()){line(page,"За этот день записей пока нет",16);return;}do{
         long id=cur.getLong(0);String title=cur.getString(1);LinearLayout c=card(WHITE);photo(c,cur.getString(4));line(c,title,20);line(c,cur.getInt(2)+("water".equals(cur.getString(3))?" мл":" ккал"),16);button(c,"Удалить",()->new AlertDialog.Builder(this).setMessage("Удалить запись «"+title+"»?").setNegativeButton("Отмена",null).setPositiveButton("Удалить",(d,w)->{db.delete("entry","id=?",new String[]{Long.toString(id)});render();}).show());
     }while(cur.moveToNext());}}
-    void camera(){pendingDay=day.toString();try{startActivityForResult(new Intent(MediaStore.ACTION_IMAGE_CAPTURE),7);}catch(ActivityNotFoundException e){Toast.makeText(this,"Приложение камеры недоступно",Toast.LENGTH_LONG).show();}}
-    @Override protected void onActivityResult(int req,int result,Intent data){super.onActivityResult(req,result,data);if(req!=7||result!=RESULT_OK||data==null||data.getExtras()==null)return;Object image=data.getExtras().get("data");if(!(image instanceof Bitmap))return;Bitmap b=(Bitmap)image;String file="shot-"+UUID.randomUUID()+".jpg";LocalDate date=pendingDay==null?day:LocalDate.parse(pendingDay);
+    void camera(){
+        pendingDay=day.toString();
+        if(checkSelfPermission(android.Manifest.permission.CAMERA)!=android.content.pm.PackageManager.PERMISSION_GRANTED){
+            requestPermissions(new String[]{android.Manifest.permission.CAMERA},19);return;
+        }
+        openLens();
+    }
+    @Override public void onRequestPermissionsResult(int request,String[] permissions,int[] results){
+        super.onRequestPermissionsResult(request,permissions,results);
+        if(request!=19)return;
+        if(results.length>0&&results[0]==0)openLens();
+        else Toast.makeText(this,"Для съёмки разреши доступ к камере в настройках приложения",Toast.LENGTH_LONG).show();
+    }
+    void openLens(){
+        Dialog dialog=new Dialog(this,android.R.style.Theme_Material_NoActionBar);
+        LinearLayout shell=column();shell.setBackgroundColor(0xff10221e);pad(shell,18);
+        TextView title=line(shell,"Камера еды",28);title.setTypeface(Typeface.SERIF,Typeface.BOLD);title.setTextColor(WHITE);
+        TextView status=line(shell,"Открываем камеру…",15);status.setTextColor(0xffceded4);status.setPadding(0,dp(4),0,dp(16));
+        androidx.camera.view.PreviewView view=new androidx.camera.view.PreviewView(this);
+        view.setImplementationMode(androidx.camera.view.PreviewView.ImplementationMode.COMPATIBLE);
+        view.setBackground(bg(0xff172e26,22));view.setClipToOutline(true);
+        FrameLayout finder=new FrameLayout(this);finder.setBackground(bg(0xff172e26,22));finder.setClipToOutline(true);
+        finder.addView(view,new FrameLayout.LayoutParams(-1,-1));
+        View frame=new View(this){
+            final Paint pen=new Paint(Paint.ANTI_ALIAS_FLAG);
+            @Override protected void onDraw(Canvas c){
+                float side=Math.min(getWidth(),getHeight())*.68f,x=(getWidth()-side)/2,y=(getHeight()-side)/2;
+                pen.setColor(0xeeffffff);pen.setStrokeWidth(dp(3));pen.setStrokeCap(Paint.Cap.ROUND);
+                for(int i=0;i<4;i++){
+                    c.save();c.rotate(90*i,getWidth()/2f,getHeight()/2f);
+                    c.drawLine(x,y,x+dp(24),y,pen);c.drawLine(x,y,x,y+dp(24),pen);c.restore();
+                }
+            }
+        };
+        finder.addView(frame,new FrameLayout.LayoutParams(-1,-1));
+        shell.addView(finder,new LinearLayout.LayoutParams(-1,0,1));
+        androidx.camera.view.LifecycleCameraController control=new androidx.camera.view.LifecycleCameraController(this);
+        control.setEnabledUseCases(0);
+        button(shell,"Распознать блюдо",()->{
+            Bitmap frame=view.getBitmap();
+            if(frame==null||frame.getWidth()==0){status.setText("Кадр ещё не готов");return;}
+            dialog.dismiss();analyze(frame);
+        });
+        View shutter=shell.getChildAt(shell.getChildCount()-1);shutter.setEnabled(false);
+        button(shell,"Закрыть",dialog::dismiss);
+        dialog.setContentView(shell);
+        dialog.show();
+        view.getPreviewStreamState().observe(this,new androidx.lifecycle.Observer<androidx.camera.view.PreviewView.StreamState>(){
+            public void onChanged(androidx.camera.view.PreviewView.StreamState state){
+                boolean ready=state==androidx.camera.view.PreviewView.StreamState.STREAMING;
+                shutter.setEnabled(ready);status.setText(ready?"Помести блюдо в центр кадра":"Ожидаем изображение…");
+            }
+        });
+        dialog.setOnDismissListener(d->{view.getPreviewStreamState().removeObservers(this);view.setController(null);control.unbind();});
+        try{view.setController(control);control.bindToLifecycle(this);}
+        catch(RuntimeException e){status.setText("Не удалось открыть камеру");}
+    }
+    void analyze(Bitmap b){
+        Toast.makeText(this,"Ищу блюдо на снимке…",Toast.LENGTH_SHORT).show();
+        String file="shot-"+UUID.randomUUID()+".jpg";LocalDate date=pendingDay==null?day:LocalDate.parse(pendingDay);
         try(FileOutputStream f=openFileOutput(file,MODE_PRIVATE)){b.compress(Bitmap.CompressFormat.JPEG,90,f);}catch(IOException e){Toast.makeText(this,"Не удалось сохранить фото",Toast.LENGTH_LONG).show();return;}
         ImageLabeler model=ImageLabeling.getClient(ImageLabelerOptions.DEFAULT_OPTIONS);
-        model.process(InputImage.fromBitmap(b,0)).addOnCompleteListener(task->{model.close();if(isFinishing()||isDestroyed())return;String suggestion="";if(task.isSuccessful()){Map<String,String> foods=new HashMap<>();String[][] pairs={{"Pizza","Пицца"},{"Salad","Салат"},{"Bread","Хлеб"},{"Fruit","Фрукты"},{"Vegetable","Овощи"},{"Cake","Торт"},{"Pasta","Паста"}};for(String[] p:pairs)foods.put(p[0],p[1]);for(ImageLabel l:task.getResult()){if(foods.containsKey(l.getText())){suggestion=foods.get(l.getText());break;}}}meal(suggestion,file,date);});
+        model.process(InputImage.fromBitmap(b,0)).addOnCompleteListener(task->{model.close();if(isFinishing()||isDestroyed())return;String suggestion="";if(task.isSuccessful()){Map<String,String> foods=new HashMap<>();String[][] pairs={{"Pizza","Пицца"},{"Salad","Салат"},{"Bread","Хлеб"},{"Fruit","Фрукты"},{"Vegetable","Овощи"},{"Cake","Торт"},{"Pasta","Паста"}};for(String[] p:pairs)foods.put(p[0],p[1]);for(ImageLabel l:task.getResult()){if(foods.containsKey(l.getText())){suggestion=foods.get(l.getText());break;}}}if(suggestion.isEmpty())Toast.makeText(this,"Блюдо не узнано. Можно ввести название вручную",Toast.LENGTH_LONG).show();meal(suggestion,file,date);});
     }
 }
