@@ -1,0 +1,35 @@
+plugins { id 'com.android.application' version '8.7.3' }
+android {
+    namespace 'app.topka.nativejournal'
+    compileSdk 35
+    defaultConfig {
+        applicationId 'app.topka.nativejournal'
+        minSdk 26
+        targetSdk 34
+        versionCode 1
+        versionName '3.0'
+    }
+    compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+}
+dependencies { implementation 'com.google.mlkit:image-labeling:17.0.9' }
+
+// Package photographic assets so the installed diary works offline.
+def photos = [salad:'1512621776951-a57141f2eefd', pizza:'1579751626657-72bc17010498', breakfast:'1525351484163-7529414344d8']
+def photoDir = layout.buildDirectory.dir('generated/photos')
+android.sourceSets.main.assets.srcDir(photoDir)
+tasks.register('prepareFoodPhotos') {
+    outputs.dir(photoDir)
+    doLast {
+        def dir = photoDir.get().asFile
+        dir.mkdirs()
+        photos.each { name, id ->
+            def conn = new URL("https://images.unsplash.com/photo-${id}?fm=jpg&w=900&q=82").openConnection()
+            conn.connectTimeout = 20000
+            conn.readTimeout = 30000
+            def bytes = conn.inputStream.withCloseable { it.bytes }
+            if (bytes.size() < 1000 || (bytes[0] & 255) != 255 || (bytes[1] & 255) != 216) throw new GradleException("Invalid photo: ${name}")
+            new File(dir, name + '.jpg').bytes = bytes
+        }
+    }
+}
+tasks.named('preBuild').configure { dependsOn 'prepareFoodPhotos' }
