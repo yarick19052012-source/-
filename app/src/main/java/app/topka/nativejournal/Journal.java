@@ -177,7 +177,7 @@ public class Journal extends androidx.activity.ComponentActivity {
         view.setBackground(bg(0xff172e26,22));view.setClipToOutline(true);
         FrameLayout finder=new FrameLayout(this);finder.setBackground(bg(0xff172e26,22));finder.setClipToOutline(true);
         finder.addView(view,new FrameLayout.LayoutParams(-1,-1));
-        View frame=new View(this){
+        View reticle=new View(this){
             final Paint pen=new Paint(Paint.ANTI_ALIAS_FLAG);
             @Override protected void onDraw(Canvas c){
                 float side=Math.min(getWidth(),getHeight())*.68f,x=(getWidth()-side)/2,y=(getHeight()-side)/2;
@@ -188,7 +188,7 @@ public class Journal extends androidx.activity.ComponentActivity {
                 }
             }
         };
-        finder.addView(frame,new FrameLayout.LayoutParams(-1,-1));
+        finder.addView(reticle,new FrameLayout.LayoutParams(-1,-1));
         shell.addView(finder,new LinearLayout.LayoutParams(-1,0,1));
         androidx.camera.view.LifecycleCameraController control=new androidx.camera.view.LifecycleCameraController(this);
         control.setEnabledUseCases(0);
